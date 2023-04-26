@@ -1,5 +1,3 @@
-import * as ast from "@inlang/core/ast";
-
 import {
   Config,
   EnvironmentFunctions,
@@ -9,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 // @ts-ignore
 import { defineConfig } from "../example/inlang.config.js";
+import { flatten } from "flat";
 import { fs as memfs } from "memfs";
 import nodeFs from "node:fs";
 import { query } from "@inlang/core/query";
@@ -77,12 +76,15 @@ describe("plugin", async () => {
         updatedReferenceResource,
       ];
       await config.writeResources({ config, resources: updatedResources });
-      const data = yaml.load(await env.$fs.readFile(
+      const data = await yaml.load(env.$fs.readFile(
         `/example/${config.referenceLanguage}.yml`,
         "utf-8"
       ).toString());
+
+      console.log("data", data);
       
-      expect(data["test-nested"].updated).toBe("Newly created message");
+      
+      expect(data).toBe("Newly created message");
     });
   });
 

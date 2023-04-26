@@ -13,9 +13,11 @@
   },
   "devDependencies": {
     "@inlang/core": "^0.5.3",
+    "@types/flat": "^5.0.2",
     "@types/js-yaml": "^4.0.5",
     "concurrently": "^7.6.0",
     "esbuild": "^0.17.10",
+    "flat": "^5.0.2",
     "js-yaml": "^4.1.0",
     "just-safe-set": "^4.2.1",
     "memfs": "^3.4.13",

@@ -2,6 +2,7 @@ import type * as ast from "@inlang/core/ast";
 
 import type { Config, EnvironmentFunctions } from "@inlang/core/config";
 
+import flatten from "flat";
 import safeSet from 'just-safe-set';
 import yaml from "js-yaml";
 
@@ -41,8 +42,11 @@ export async function readResources(
     const yamlBuffer = await args.$fs.readFile(resourcePath);
     const yamlString = yamlBuffer.toString("utf-8");
     const yamlObject = yaml.load(yamlString) as Record<string, string>;
-    result.push(parseResource(yamlObject, language));
-  }
+
+    // reading the json, and flattening it to avoid nested keys.
+    const flatJson = flatten(yamlObject) as Record<string, string>;
+    result.push(parseResource(flatJson, language));
+  }  
   
   return result;
 }
@@ -115,9 +119,13 @@ function parseMessage(id: string, value: string): ast.Message {
  *  serializeResource(resource)
  */
 function serializeResource(resource: ast.Resource): string {
-  const json = Object.fromEntries(resource.body.map(serializeMessage));
-  // stringyify the object with beautification.
-  return JSON.stringify(json, null, 2);
+    const obj = {}
+    resource.body.forEach(message => {
+      const [key, value] = serializeMessage(message)
+      safeSet(obj, key, value);
+    });
+    // stringify the object with beautification.
+    return JSON.stringify(obj, null, 2);
 }
 
 /**
