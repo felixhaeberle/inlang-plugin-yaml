@@ -39,9 +39,8 @@ export async function readResources(
       "{language}",
       language
     );
-    const yamlBuffer = await args.$fs.readFile(resourcePath);
-    const yamlString = yamlBuffer.toString("utf-8");
-    const yamlObject = yaml.load(yamlString) as Record<string, string>;
+    const yamlBuffer = await args.$fs.readFile(resourcePath, {encoding: "utf-8"});
+    const yamlObject = yaml.load(yamlBuffer as string) as Record<string, string>;
 
     // reading the json, and flattening it to avoid nested keys.
     const flatJson = flatten(yamlObject) as Record<string, string>;

@@ -90,14 +90,14 @@ describe("plugin", async () => {
     const config = (await defineConfig(env)) as Config;
     
     const original = {
-      en: yaml.load((await env.$fs.readFile("./en.yml", "utf-8")).toString()),
-      de: yaml.load((await env.$fs.readFile("./de.yml", "utf-8")).toString()),
+      en: yaml.load(await env.$fs.readFile("./en.yml", {encoding: "utf-8"}) as string),
+      de: yaml.load(await env.$fs.readFile("./de.yml", {encoding: "utf-8"}) as string),
     };
     const resources = await config.readResources({ config });    
     await config.writeResources({ config, resources });
     const updated = {
-      en: yaml.load((await env.$fs.readFile("./en.yml", "utf-8")).toString()),
-      de: yaml.load((await env.$fs.readFile("./de.yml", "utf-8")).toString()),
+      en: yaml.load(await env.$fs.readFile("./en.yml", {encoding: "utf-8"}) as string),
+      de: yaml.load(await env.$fs.readFile("./de.yml", {encoding: "utf-8"}) as string),
     };
     
     expect(updated).toMatchObject(original);
@@ -129,7 +129,7 @@ async function initializeTestEnvironment(): Promise<EnvironmentFunctions> {
     for (const file of await nodeFs.promises.readdir("./" + path)) {
       await $fs.writeFile(
         `${path}/${file}`,
-        await nodeFs.promises.readFile(`./${path}/${file}`, "utf-8"),
+        await nodeFs.promises.readFile(`./${path}/${file}`, {encoding: "utf-8"}),
         { encoding: "utf-8" }
       );
     }
