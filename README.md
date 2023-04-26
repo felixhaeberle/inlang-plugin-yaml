@@ -1,16 +1,5 @@
 # inlang-plugin-yaml
 
-> **Note**  
-> 
-> **Change the following things if you use this template:**
-> 1. Name your repository "inlang-plugin-{name}".
-> 2. Change the introduction paragraph to describe your plugin.
-> 3. Create a release on GitHub so users can import a specific version of your plugin.
-> 4. Update the Usage section.
-> 5. Open a PR to https://github.com/inlang/awesome-inlang
-
-This is a template for creating a new plugin for [inlang](https://inlang.com).
-
 Plugins allow the customization of inlang's behavior by, for example, defining how resources should be parsed and serialized. Read more about using plugins on the [documentation site](https://inlang.com/documentation/plugins). This template has been set up to provide out of the box:
 
 - [x] TypeScript
@@ -26,7 +15,7 @@ Plugins can be imported directly from GitHub releases via jsDelivr.
 
 export async function defineConfig(env){
   const plugin = await env.$import(
-    "https://cdn.jsdelivr.net/gh/{username}/{repository-name}@{version}/dist/index.js"
+    "https://cdn.jsdelivr.net/gh/felixhaeberle/inlang-plugin-yaml@1.0.1/dist/index.js"
   ) 
 }
 ```
