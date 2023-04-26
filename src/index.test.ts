@@ -7,7 +7,6 @@ import { describe, expect, it } from "vitest";
 
 // @ts-ignore
 import { defineConfig } from "../example/inlang.config.js";
-import { flatten } from "flat";
 import { fs as memfs } from "memfs";
 import nodeFs from "node:fs";
 import { query } from "@inlang/core/query";
@@ -76,15 +75,13 @@ describe("plugin", async () => {
         updatedReferenceResource,
       ];
       await config.writeResources({ config, resources: updatedResources });
-      const data = await yaml.load(env.$fs.readFile(
+      const file = await env.$fs.readFile(
         `/example/${config.referenceLanguage}.yml`,
         "utf-8"
-      ).toString());
-
-      console.log("data", data);
+      );
+      const data = await yaml.load(file.toString()) as Record<any, any>;      
       
-      
-      expect(data).toBe("Newly created message");
+      expect(data["test-nested"].updated).toBe("Newly created message");
     });
   });
 
