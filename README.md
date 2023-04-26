@@ -1,4 +1,4 @@
-# inlang plugin-template
+# inlang-plugin-yaml
 
 > **Note**  
 > 
