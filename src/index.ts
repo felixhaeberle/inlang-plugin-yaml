@@ -1,5 +1,9 @@
-import type { Config, EnvironmentFunctions } from "@inlang/core/config";
 import type * as ast from "@inlang/core/ast";
+
+import type { Config, EnvironmentFunctions } from "@inlang/core/config";
+
+import safeSet from 'just-safe-set';
+import yaml from "js-yaml";
 
 /**
  * The plugin configuration.
@@ -34,12 +38,12 @@ export async function readResources(
       "{language}",
       language
     );
-    // reading the json
-    const json = JSON.parse(
-      (await args.$fs.readFile(resourcePath, "utf-8")) as string
-    );
-    result.push(parseResource(json, language));
+    const yamlBuffer = await args.$fs.readFile(resourcePath);
+    const yamlString = yamlBuffer.toString("utf-8");
+    const yamlObject = yaml.load(yamlString) as Record<string, string>;
+    result.push(parseResource(yamlObject, language));
   }
+  
   return result;
 }
 
@@ -58,19 +62,17 @@ export async function writeResources(
       "{language}",
       resource.languageTag.name
     );
-    await args.$fs.writeFile(resourcePath, serializeResource(resource));
+    // save json to yml file
+    const yamlString = yaml.dump(JSON.parse(serializeResource(resource)));
+    await args.$fs.writeFile(resourcePath, yamlString);
   }
 }
 
 /**
  * Parses a resource.
- *
- * @example
- *  parseResource({ "test": "Hello world" }, "en")
  */
 function parseResource(
-  /** flat JSON refers to the flatten function from https://www.npmjs.com/package/flat */
-  flatJson: Record<string, string>,
+  yamlObject: Record<string, string>,
   language: string
 ): ast.Resource {
   return {
@@ -79,7 +81,7 @@ function parseResource(
       type: "LanguageTag",
       name: language,
     },
-    body: Object.entries(flatJson).map(([id, value]) =>
+    body: Object.entries(yamlObject).map(([id, value]) =>
       parseMessage(id, value)
     ),
   };
@@ -125,5 +127,5 @@ function serializeResource(resource: ast.Resource): string {
  * does not support more than 1 element in a pattern.
  */
 function serializeMessage(message: ast.Message): [id: string, value: string] {
-  return [message.id.name, message.pattern.elements[0].value];
+  return [message.id.name, message.pattern.elements[0].value as string];
 }
