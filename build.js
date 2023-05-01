@@ -6,16 +6,15 @@
  */
 
 import { context } from "esbuild";
-import { pluginBuildConfig } from "@inlang/core/utilities";
+import { pluginBuildConfig } from "@inlang/core/plugin";
 
-const ctx = await context(
-  await pluginBuildConfig({
-    entryPoints: ["src/index.ts"],
-    outfile: "dist/index.js",
-    // minification is disabled in dev mode for better debugging
-    minify: !process.env.DEV,
-  })
-);
+const options = await pluginBuildConfig({
+  entryPoints: ["./src/index.js"],
+  outfile: "./dist/index.js",
+  minify: true,
+});
+
+const ctx = await context(options);
 
 if (process.env.DEV) {
   await ctx.watch();
