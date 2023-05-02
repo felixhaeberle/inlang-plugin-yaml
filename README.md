@@ -1,22 +1,27 @@
-# inlang-plugin-yaml
+# inlang plugin-template
 
-Plugins allow the customization of inlang's behavior by, for example, defining how resources should be parsed and serialized. Read more about using plugins on the [documentation site](https://inlang.com/documentation/plugins). This template has been set up to provide out of the box:
-
-- [x] TypeScript
-- [x] Testing (the example)
-- [x] Bundling
+This is a template for creating a new plugin for inlang [[documentation](https://inlang.com/documentation/plugins)].
 
 ## Usage
 
-Plugins can be imported directly from GitHub releases via jsDelivr. 
+Plugins can be imported directly from GitHub releases via jsDelivr.
 
 ```js
 // filename: inlang.config.js
 
-export async function defineConfig(env){
-  const plugin = await env.$import(
-    "https://cdn.jsdelivr.net/gh/felixhaeberle/inlang-plugin-yaml@1.0.1/dist/index.js"
-  ) 
+export async function defineConfig(env) {
+  const { default: pluginYaml } = await env.$import(
+    "https://cdn.jsdelivr.net/gh/felixhaeberle/inlang-plugin-yaml@{version}/dist/index.js"
+  );
+
+  return {
+    // other properties...
+    plugins: [
+      pluginYaml({
+        pathPattern: "./example/{language}.yml",
+      }),
+    ],
+  };
 }
 ```
 
@@ -36,9 +41,12 @@ Run the following commands in your terminal (node and npm must be installed):
 ## Publishing
 
 1. Run `npm run build` to generate a build.
-2. Commit the new build. 
+2. Commit the new build.
 3. Create a new release on GitHub that uses [Semantic Versioning (SemVer)](https://semver.org/). Take a look at [inlang-plugin-json](https://github.com/samuelstroschein/inlang-plugin-json/releases) for example releases.
-Note: 
+4. (Optional) Open a pull request to https://github.com/inlang/ecosystem
+
+Note:
+
 - tags are used without "v" at the beginning like: New Tag: 1.2.2
 - JSdeliver cached your plugin for `one week`. If you published a new Version and you want to debug something, you have to specify your version in the link like: ....standard-lint-rules@1.2.2/dist/index.js"
 
