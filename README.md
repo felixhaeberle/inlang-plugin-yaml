@@ -1,6 +1,6 @@
-# inlang plugin-template
+# inlang-plugin-yaml
 
-This is a template for creating a new plugin for inlang [[documentation](https://inlang.com/documentation/plugins)].
+This is a yaml plugin for using translations resources in the yaml format with [inlang](https://inlang.com/documentation/plugins)].
 
 ## Usage
 
