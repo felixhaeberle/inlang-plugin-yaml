@@ -1,5 +1,7 @@
 # inlang-plugin-yaml
 
+## ⚠️ OUTDATED - PR TO UPDATE THIS PLUGIN WELCOME**
+
 This is a yaml plugin for using translations resources in the yaml format with [inlang](https://inlang.com/documentation/plugins).
 
 ## Usage
