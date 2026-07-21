@@ -1,0 +1,33 @@
+{
+  "$schema": "https://inlang.com/schema/marketplace-manifest",
+  "id": "plugin.felixhaeberle.yaml",
+  "icon": "./assets/icon.png",
+  "gallery": ["./assets/icon.png"],
+  "displayName": {
+    "en": "YAML translation files"
+  },
+  "description": {
+    "en": "Use YAML files (.yaml/.yml) as translation resources, including Ruby on Rails-style locale files."
+  },
+  "pages": {
+    "/": "./README.md"
+  },
+  "keywords": [
+    "yaml",
+    "yml",
+    "rails",
+    "ruby",
+    "symfony",
+    "generic",
+    "website",
+    "load",
+    "save",
+    "import",
+    "export",
+    "messages",
+    "plugin"
+  ],
+  "publisherName": "felixhaeberle",
+  "license": "MIT",
+  "module": "https://cdn.jsdelivr.net/gh/felixhaeberle/inlang-plugin-yaml@3/dist/index.js"
+}

@@ -1,0 +1,5 @@
+greeting: Hallo {name}!
+menu:
+  home: Startseite
+  about: Über uns
+farewell: Auf Wiedersehen

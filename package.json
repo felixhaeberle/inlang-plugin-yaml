@@ -1,27 +1,37 @@
 {
   "name": "inlang-plugin-yaml",
+  "version": "3.0.0",
+  "description": "YAML resource plugin for inlang — import/export YAML translation files (i18next-style and Ruby on Rails-style)",
   "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./dist/index.js"
+  },
+  "files": [
+    "./dist"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/felixhaeberle/inlang-plugin-yaml"
+  },
   "engines": {
-    "node": "^18"
+    "node": ">=18"
   },
   "scripts": {
-    "dev": "concurrently -n build,test -c auto \"npm run dev:watch\" \"npm run dev:test\"",
-    "dev:test": "vitest",
-    "dev:watch": "DEV=true node ./build.js",
-    "build": "node ./build.js",
-    "test": "vitest run"
+    "dev": "node ./build.js",
+    "build": "NODE_ENV=production node ./build.js && tsc --project tsconfig.build.json",
+    "test": "tsc --noEmit && vitest run",
+    "clean": "rm -rf ./dist ./node_modules"
+  },
+  "dependencies": {
+    "@sinclair/typebox": "^0.31.28"
   },
   "devDependencies": {
-    "@inlang/core": "^0.7.8",
-    "@types/flat": "^5.0.2",
-    "@types/js-yaml": "^4.0.5",
-    "concurrently": "^7.6.0",
-    "esbuild": "^0.17.10",
-    "flat": "^5.0.2",
-    "js-yaml": "^4.1.0",
-    "just-safe-set": "^4.2.1",
-    "memfs": "^3.4.13",
-    "typescript": "^4.9.5",
-    "vitest": "^0.29.1"
+    "@inlang/sdk": "^2.10.2",
+    "esbuild": "^0.24.2",
+    "typescript": "^5.5.2",
+    "vitest": "^2.1.8",
+    "yaml": "^2.9.0"
   }
 }

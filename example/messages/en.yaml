@@ -1,0 +1,5 @@
+greeting: Hello {name}!
+menu:
+  home: Home
+  about: About us
+farewell: Goodbye

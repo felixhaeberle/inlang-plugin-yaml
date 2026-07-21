@@ -1,26 +1,28 @@
 /**
- * This is the build script for the project.
- *
- * It takes the source code and bundles it into a single file
- * that can be imported into an inlang project.
+ * Bundles the plugin into a single, self-contained ES module (dist/index.js)
+ * that inlang apps can load directly from a CDN like jsDelivr.
  */
-
 import { context } from "esbuild";
-import { pluginBuildConfig } from "@inlang/core/plugin";
 
-const options = await pluginBuildConfig({
-  entryPoints: ["./src/index.js"],
-  outfile: "./dist/index.js",
-  minify: true,
+const isProduction = process.env.NODE_ENV === "production";
+
+const ctx = await context({
+  entryPoints: ["./src/index.ts"],
+  outdir: "./dist",
+  bundle: true,
+  format: "esm",
+  platform: "browser",
+  // allow top level await
+  target: "es2022",
+  minify: isProduction,
+  sourcemap: false,
 });
 
-const ctx = await context(options);
-
-if (process.env.DEV) {
+if (isProduction === false) {
   await ctx.watch();
   console.info("👀 watching for changes...");
 } else {
   await ctx.rebuild();
-  console.info("✅ build complete");
   await ctx.dispose();
+  console.info("✅ build complete");
 }

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://inlang.com/schema/project-settings",
+  "baseLocale": "en",
+  "locales": ["en", "de"],
+  "modules": [
+    "https://cdn.jsdelivr.net/gh/felixhaeberle/inlang-plugin-yaml@3/dist/index.js"
+  ],
+  "plugin.felixhaeberle.yaml": {
+    "pathPattern": "./messages/{locale}.yaml"
+  }
+}
