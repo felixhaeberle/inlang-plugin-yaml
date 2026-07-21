@@ -215,5 +215,5 @@ test("throws when exporting selectors or multiple variants", async () => {
         },
       ],
     }),
-  ).rejects.toThrow(/not supported/);
+  ).rejects.toThrow(/cannot be represented in YAML/);
 });

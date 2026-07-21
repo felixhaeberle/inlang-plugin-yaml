@@ -1,5 +1,11 @@
+# Example translation file — comments and formatting survive exports
 greeting: Hello {name}!
 menu:
   home: Home
   about: About us
+
+# CLDR plural group -> one message with plural variants in inlang
+items:
+  one: One item
+  other: "{count} items"
 farewell: Goodbye

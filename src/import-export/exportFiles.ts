@@ -11,15 +11,23 @@ import { PLUGIN_KEY } from "../pluginKey.js";
 import { getMessagePath } from "./messageId.js";
 import { assignPath, resolveExtension } from "../utilities.js";
 import {
+  deleteAndPrune,
+  setValueAtPath,
+  stringifyDocument,
+} from "../yamlDocument.js";
+import { cacheKey, encodeLeafPath, getFileFormat } from "../formatCache.js";
+import {
+  categoryFromMatches,
+  sortCategories,
+  type PluralCategory,
+} from "../plurals.js";
+import {
   DEFAULT_VARIABLE_REFERENCE_PATTERN,
   serializePattern,
 } from "../pattern.js";
 
-type ExportMessage = {
-  key: string;
-  path?: string[];
-  value: string;
-};
+/** A single scalar to write, addressed by its full path in the document. */
+type ExportLeaf = { docPath: string[]; value: string };
 
 export async function exportFiles(args: {
   bundles: Bundle[];
@@ -35,6 +43,7 @@ export async function exportFiles(args: {
     pluginSettings?.variableReferencePattern ??
     DEFAULT_VARIABLE_REFERENCE_PATTERN;
   const localeAsRootKey = pluginSettings?.localeAsRootKey ?? false;
+  const preserveFormatting = pluginSettings?.preserveFormatting ?? true;
 
   const namespaces =
     pathPattern !== undefined &&
@@ -44,28 +53,29 @@ export async function exportFiles(args: {
       : [];
   const defaultNamespace = namespaces[0];
 
-  const files: Record<string, ExportMessage[]> = {};
-  const namespaceFiles: Record<string, Record<string, ExportMessage[]>> = {};
+  const bundlesById = new Map(args.bundles.map((bundle) => [bundle.id, bundle]));
+  const variantsByMessageId = new Map<string, Variant[]>();
+  for (const variant of args.variants) {
+    const list = variantsByMessageId.get(variant.messageId);
+    if (list === undefined) {
+      variantsByMessageId.set(variant.messageId, [variant]);
+    } else {
+      list.push(variant);
+    }
+  }
+
+  // locale -> leaves (files without namespaces) / namespace -> locale -> leaves
+  const files: Record<string, ExportLeaf[]> = {};
+  const namespaceFiles: Record<string, Record<string, ExportLeaf[]>> = {};
 
   for (const message of args.messages) {
-    const bundle = args.bundles.find(
-      (candidate) => candidate.id === message.bundleId,
-    );
+    const bundle = bundlesById.get(message.bundleId);
     if (bundle === undefined) {
       continue;
     }
-
-    const messageVariants = args.variants.filter(
-      (candidate) => candidate.messageId === message.id,
-    );
-    if (
-      message.selectors.length > 0 ||
-      messageVariants.length > 1 ||
-      messageVariants.some((variant) => variant.matches.length > 0)
-    ) {
-      throw new Error(
-        "Selectors, matches, and multiple variants are not supported by the YAML plugin.",
-      );
+    const messageVariants = variantsByMessageId.get(message.id) ?? [];
+    if (messageVariants.length === 0) {
+      continue;
     }
 
     const namespace =
@@ -73,33 +83,42 @@ export async function exportFiles(args: {
     const key = namespace
       ? removeNamespaceFromBundleId(bundle.id, namespace)
       : bundle.id;
-    const path = getCurrentMessagePath({
+    const basePath = getCurrentMessagePath({
       messageId: message.id,
       currentKey: key,
+    }) ?? [key];
+    const docPathPrefix = localeAsRootKey ? [message.locale] : [];
+
+    const leaves = messageToLeaves({
+      message,
+      messageVariants,
+      basePath: [...docPathPrefix, ...basePath],
+      bundleId: bundle.id,
+      variableReferencePattern,
     });
 
-    for (const variant of messageVariants) {
-      const exportMessage = {
-        key,
-        path,
-        value: serializePattern(variant.pattern, variableReferencePattern),
-      };
-
-      if (namespace === undefined) {
-        files[message.locale] ??= [];
-        files[message.locale]!.push(exportMessage);
-      } else {
-        namespaceFiles[namespace] ??= {};
-        namespaceFiles[namespace]![message.locale] ??= [];
-        namespaceFiles[namespace]![message.locale]!.push(exportMessage);
-      }
+    if (namespace === undefined) {
+      files[message.locale] ??= [];
+      files[message.locale]!.push(...leaves);
+    } else {
+      namespaceFiles[namespace] ??= {};
+      namespaceFiles[namespace]![message.locale] ??= [];
+      namespaceFiles[namespace]![message.locale]!.push(...leaves);
     }
   }
 
   const withoutNamespaces: ExportFile[] = Object.entries(files).map(
-    ([locale, messages]) => ({
+    ([locale, leaves]) => ({
       locale,
-      content: encodeYaml(messages, { locale, localeAsRootKey }),
+      content: encodeYaml({
+        leaves,
+        cacheKey: cacheKey({
+          settings: pluginSettings,
+          locale,
+          namespace: undefined,
+        }),
+        preserveFormatting,
+      }),
       name: `${locale}.${resolveExtension(
         typeof pathPattern === "string" ? pathPattern : undefined,
       )}`,
@@ -107,9 +126,13 @@ export async function exportFiles(args: {
   );
   const withNamespaces: ExportFile[] = Object.entries(namespaceFiles).flatMap(
     ([namespace, locales]) =>
-      Object.entries(locales).map(([locale, messages]) => ({
+      Object.entries(locales).map(([locale, leaves]) => ({
         locale,
-        content: encodeYaml(messages, { locale, localeAsRootKey }),
+        content: encodeYaml({
+          leaves,
+          cacheKey: cacheKey({ settings: pluginSettings, locale, namespace }),
+          preserveFormatting,
+        }),
         name: `${namespace}-${locale}.${resolveExtension(
           typeof pathPattern === "object" && pathPattern !== null
             ? pathPattern[namespace]
@@ -120,6 +143,66 @@ export async function exportFiles(args: {
   );
 
   return [...withoutNamespaces, ...withNamespaces];
+}
+
+/**
+ * Converts one message (and its variants) into scalar leaves.
+ *
+ * - A single variant without selectors/matches -> one leaf at the base path.
+ * - Plural variants (single selector, category matches) -> one leaf per
+ *   category below the base path.
+ */
+function messageToLeaves(args: {
+  message: Message;
+  messageVariants: Variant[];
+  basePath: string[];
+  bundleId: string;
+  variableReferencePattern: string[];
+}): ExportLeaf[] {
+  const { message, messageVariants } = args;
+
+  if (
+    message.selectors.length === 0 &&
+    messageVariants.length === 1 &&
+    messageVariants[0]!.matches.length === 0
+  ) {
+    return [
+      {
+        docPath: args.basePath,
+        value: serializePattern(
+          messageVariants[0]!.pattern,
+          args.variableReferencePattern,
+        ),
+      },
+    ];
+  }
+
+  if (message.selectors.length === 1) {
+    const categories: Partial<Record<PluralCategory, string>> = {};
+    let isPlural = true;
+    for (const variant of messageVariants) {
+      const category = categoryFromMatches(variant.matches);
+      if (category === undefined || categories[category] !== undefined) {
+        isPlural = false;
+        break;
+      }
+      categories[category] = serializePattern(
+        variant.pattern,
+        args.variableReferencePattern,
+      );
+    }
+    if (isPlural) {
+      return sortCategories(categories).map(([category, value]) => ({
+        docPath: [...args.basePath, category],
+        value,
+      }));
+    }
+  }
+
+  throw new Error(
+    `Message "${args.bundleId}" (${message.locale}) cannot be represented in YAML: ` +
+      "only plain messages and plural variants (CLDR categories with a single selector) are supported.",
+  );
 }
 
 function resolveNamespaceFromBundleId(
@@ -148,28 +231,43 @@ function getCurrentMessagePath(args: {
   return path?.join(".") === args.currentKey ? path : undefined;
 }
 
-function encodeYaml(
-  messages: ExportMessage[],
-  options: { locale: string; localeAsRootKey: boolean },
-): Uint8Array {
-  const tree = toTree(messages);
-  const root = options.localeAsRootKey ? { [options.locale]: tree } : tree;
-  return new TextEncoder().encode(
-    stringify(root, { indent: 2, lineWidth: 0 }),
-  );
-}
+function encodeYaml(args: {
+  leaves: ExportLeaf[];
+  cacheKey: string;
+  preserveFormatting: boolean;
+}): Uint8Array {
+  const cached = args.preserveFormatting
+    ? getFileFormat(args.cacheKey)
+    : undefined;
 
-function toTree(messages: ExportMessage[]): Record<string, unknown> {
-  const flatMessages: Record<string, string> = {};
-  const result: Record<string, unknown> = {};
-
-  for (const message of messages) {
-    if (message.path === undefined) {
-      flatMessages[message.key] = message.value;
-      continue;
+  if (cached === undefined) {
+    // no existing file known -> emit a clean tree
+    const tree: Record<string, unknown> = {};
+    for (const leaf of args.leaves) {
+      assignPath(tree, leaf.docPath, leaf.value);
     }
-    assignPath(result, message.path, message.value);
+    return new TextEncoder().encode(
+      stringify(tree, { indent: 2, lineWidth: 0 }),
+    );
   }
 
-  return { ...flatMessages, ...result };
+  // update the imported document in place: comments, key order, quote
+  // styles, and non-message content (arrays, etc.) survive
+  const currentLeafPaths = new Set(
+    args.leaves.map((leaf) => encodeLeafPath(leaf.docPath)),
+  );
+  for (const staleLeafPath of cached.importedLeafPaths) {
+    if (currentLeafPaths.has(staleLeafPath) === false) {
+      deleteAndPrune(cached.document, JSON.parse(staleLeafPath));
+    }
+  }
+  for (const leaf of args.leaves) {
+    setValueAtPath(cached.document, leaf.docPath, leaf.value);
+  }
+  // future exports must treat everything just written as message content
+  cached.importedLeafPaths = currentLeafPaths;
+
+  return new TextEncoder().encode(
+    stringifyDocument(cached.document, cached.indent),
+  );
 }

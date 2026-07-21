@@ -5,11 +5,16 @@
  * created with the actual SDK, files are imported through the SDK's
  * import/export pipeline, and the database state is inspected.
  */
-import { expect, test } from "vitest";
+import { beforeEach, expect, test } from "vitest";
 import { parse } from "yaml";
 import { loadProjectInMemory, newProject } from "@inlang/sdk";
 import { plugin } from "./plugin.js";
 import { PLUGIN_KEY } from "./pluginKey.js";
+import { clearFileFormatCache } from "./formatCache.js";
+
+beforeEach(() => {
+  clearFileFormatCache();
+});
 
 const enYaml = [
   "greeting: Hello {name}!",
@@ -113,6 +118,92 @@ test("re-importing the same files is idempotent (no duplicates)", async () => {
     expect(new Set(variants.map((variant) => variant.messageId))).toEqual(
       new Set(messages.map((message) => message.id)),
     );
+  } finally {
+    await project.close();
+  }
+});
+
+test("round-trips plural variants through the real SDK", async () => {
+  const project = await loadTestProject();
+  const pluralYaml = [
+    "inbox:",
+    "  one: You have one message",
+    '  other: "You have {count} messages"',
+    "",
+  ].join("\n");
+
+  try {
+    await project.importFiles({
+      pluginKey: plugin.key,
+      files: [{ locale: "en", content: new TextEncoder().encode(pluralYaml) }],
+    });
+
+    const bundles = await project.db.selectFrom("bundle").selectAll().execute();
+    expect(bundles).toHaveLength(1);
+    expect(bundles[0]!.declarations).toEqual([
+      { type: "input-variable", name: "count" },
+      {
+        type: "local-variable",
+        name: "countPlural",
+        value: {
+          type: "expression",
+          arg: { type: "variable-reference", name: "count" },
+          annotation: {
+            type: "function-reference",
+            name: "plural",
+            options: [],
+          },
+        },
+      },
+    ]);
+
+    const messages = await project.db
+      .selectFrom("message")
+      .selectAll()
+      .execute();
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.selectors).toEqual([
+      { type: "variable-reference", name: "countPlural" },
+    ]);
+
+    const variants = await project.db
+      .selectFrom("variant")
+      .selectAll()
+      .execute();
+    expect(variants).toHaveLength(2);
+    expect(variants.map((variant) => variant.matches)).toEqual([
+      [{ type: "literal-match", key: "countPlural", value: "one" }],
+      [{ type: "catchall-match", key: "countPlural" }],
+    ]);
+
+    const [file] = await project.exportFiles({ pluginKey: plugin.key });
+    expect(new TextDecoder().decode(file!.content)).toBe(pluralYaml);
+  } finally {
+    await project.close();
+  }
+});
+
+test("preserves comments and formatting through the real SDK", async () => {
+  const project = await loadTestProject();
+  const commentedYaml = [
+    "# translation file managed by the team",
+    'greeting: "Hello {name}!" # keep the quotes',
+    "",
+    "nested:",
+    "  farewell: Goodbye",
+    "",
+  ].join("\n");
+
+  try {
+    await project.importFiles({
+      pluginKey: plugin.key,
+      files: [
+        { locale: "en", content: new TextEncoder().encode(commentedYaml) },
+      ],
+    });
+
+    const [file] = await project.exportFiles({ pluginKey: plugin.key });
+    expect(new TextDecoder().decode(file!.content)).toBe(commentedYaml);
   } finally {
     await project.close();
   }

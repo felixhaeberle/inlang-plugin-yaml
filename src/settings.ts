@@ -47,4 +47,20 @@ export const PluginSettings = Type.Object({
       examples: [true],
     }),
   ),
+  plurals: Type.Optional(
+    Type.Boolean({
+      title: "Plural group detection",
+      description:
+        "Import CLDR plural groups (e.g. `{ one: ..., other: ... }`) as one message with plural variants instead of separate `key.one`/`key.other` messages. Defaults to true.",
+      examples: [false],
+    }),
+  ),
+  preserveFormatting: Type.Optional(
+    Type.Boolean({
+      title: "Preserve file formatting",
+      description:
+        "Keep comments, key order, quote styles, indentation, and non-message content (e.g. arrays) of existing YAML files when exporting. Defaults to true.",
+      examples: [false],
+    }),
+  ),
 });

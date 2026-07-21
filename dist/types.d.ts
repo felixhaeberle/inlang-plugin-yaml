@@ -65,12 +65,17 @@ export type StoredPattern = Array<Text | Expression | {
     type: string;
 }>;
 /**
- * Only input variables are emitted by this plugin ("local-variable"
- * declarations exist in the SDK but are never created here).
+ * Declarations emitted by this plugin: input variables for `{placeholders}`
+ * and, for plural bundles, a local variable that applies the `plural`
+ * function to the count input.
  */
 export type Declaration = {
     type: "input-variable";
     name: string;
+} | {
+    type: "local-variable";
+    name: string;
+    value: Expression;
 };
 export type Match = {
     type: "literal-match";

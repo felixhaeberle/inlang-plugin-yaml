@@ -1,5 +1,11 @@
+# Beispiel-Übersetzungsdatei — Kommentare und Formatierung bleiben erhalten
 greeting: Hallo {name}!
 menu:
   home: Startseite
   about: Über uns
+
+# CLDR-Pluralgruppe -> eine Nachricht mit Pluralvarianten in inlang
+items:
+  one: Ein Artikel
+  other: "{count} Artikel"
 farewell: Auf Wiedersehen

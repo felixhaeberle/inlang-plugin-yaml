@@ -11,5 +11,5 @@ export declare function createMessageId(args: {
     bundleId: string;
     path: string[];
 }): string;
-export declare function createVariantId(messageId: string): string;
+export declare function createVariantId(messageId: string, category?: string): string;
 export declare function getMessagePath(messageId: string): string[] | undefined;

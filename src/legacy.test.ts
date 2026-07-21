@@ -170,6 +170,66 @@ test("round-trips namespaced path patterns", async () => {
   });
 });
 
+test("save preserves comments, key order, and unrelated content of existing files", async () => {
+  const original = [
+    "# main greetings",
+    "greeting: Hello",
+    "weekdays:",
+    "  - Monday",
+    "  - Tuesday",
+    "farewell: Goodbye",
+    "",
+  ].join("\n");
+  const { fs, files } = createMockFs({ "./messages/en.yaml": original });
+  const settings = {
+    sourceLanguageTag: "en",
+    languageTags: ["en"],
+    [PLUGIN_KEY]: { pathPattern: "./messages/{languageTag}.yaml" },
+  };
+
+  const messages = await loadMessages({ settings, nodeishFs: fs });
+  // change one value
+  messages.find((message) => message.id === "greeting")!.variants[0]!.pattern =
+    [{ type: "Text", value: "Hi" }];
+  await saveMessages({ messages, settings, nodeishFs: fs });
+
+  expect(files.get("messages/en.yaml")).toBe(
+    [
+      "# main greetings",
+      "greeting: Hi",
+      "weekdays:",
+      "  - Monday",
+      "  - Tuesday",
+      "farewell: Goodbye",
+      "",
+    ].join("\n"),
+  );
+});
+
+test("save removes messages deleted since load and prunes empty parents", async () => {
+  const original = [
+    "menu:",
+    "  home: Home",
+    "greeting: Hello",
+    "",
+  ].join("\n");
+  const { fs, files } = createMockFs({ "./messages/en.yaml": original });
+  const settings = {
+    sourceLanguageTag: "en",
+    languageTags: ["en"],
+    [PLUGIN_KEY]: { pathPattern: "./messages/{languageTag}.yaml" },
+  };
+
+  const messages = await loadMessages({ settings, nodeishFs: fs });
+  await saveMessages({
+    messages: messages.filter((message) => message.id !== "menu.home"),
+    settings,
+    nodeishFs: fs,
+  });
+
+  expect(files.get("messages/en.yaml")).toBe(["greeting: Hello", ""].join("\n"));
+});
+
 test("round-trips Rails-style files (locale as root key, %{} variables)", async () => {
   const railsEn = ["en:", '  hello: "Hi %{user}!"', "  bye: Bye"].join("\n");
   const { fs, files } = createMockFs({

@@ -1,4 +1,4 @@
-import { parse } from "yaml";
+import { asPluralGroup, type PluralCategory } from "./plurals.js";
 
 /**
  * Replaces the `{locale}` (or legacy `{languageTag}`) placeholder in a path
@@ -8,36 +8,31 @@ export function replaceLocale(path: string, locale: string): string {
   return path.replace(/\{(locale|languageTag)\}/g, locale);
 }
 
-/**
- * Parses YAML text into a plain object.
- *
- * - An empty document yields `{}`.
- * - Merge keys (`<<:`) are resolved, as commonly used in Rails locale files.
- */
-export function parseYamlObject(text: string): Record<string, unknown> {
-  const value = parse(text, { merge: true }) ?? {};
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error(
-      "Expected a YAML mapping (key-value pairs) at the document root.",
-    );
-  }
-  return value as Record<string, unknown>;
-}
+export type MessageEntry =
+  | { kind: "message"; key: string; path: string[]; value: string }
+  | {
+      kind: "plural";
+      key: string;
+      path: string[];
+      categories: Partial<Record<PluralCategory, string>>;
+    };
 
 /**
- * Flattens a parsed YAML object into message entries.
+ * Walks a parsed YAML object and collects message entries.
  *
- * Scalar leaves (strings, numbers, booleans) become messages; numbers and
- * booleans are coerced to strings so that unquoted YAML values are not lost.
- * Arrays and nulls are skipped because they cannot be represented as
- * inlang messages.
+ * - Scalar leaves (strings, numbers, booleans) become messages; numbers and
+ *   booleans are coerced to strings so that unquoted YAML values are not
+ *   lost.
+ * - With `plurals` enabled, mappings whose keys are CLDR plural categories
+ *   (e.g. `{ one: ..., other: ... }`) become a single plural entry.
+ * - Arrays and nulls are skipped because they cannot be represented as
+ *   inlang messages.
  */
-export function flattenYaml(root: Record<string, unknown>): Array<{
-  key: string;
-  path: string[];
-  value: string;
-}> {
-  const result: Array<{ key: string; path: string[]; value: string }> = [];
+export function collectEntries(
+  root: Record<string, unknown>,
+  options: { plurals: boolean },
+): MessageEntry[] {
+  const result: MessageEntry[] = [];
 
   function visit(value: unknown, path: string[]) {
     if (
@@ -46,7 +41,12 @@ export function flattenYaml(root: Record<string, unknown>): Array<{
       typeof value === "boolean"
     ) {
       if (path.length > 0) {
-        result.push({ key: path.join("."), path, value: String(value) });
+        result.push({
+          kind: "message",
+          key: path.join("."),
+          path,
+          value: String(value),
+        });
       }
       return;
     }
@@ -56,6 +56,13 @@ export function flattenYaml(root: Record<string, unknown>): Array<{
       typeof value === "object" &&
       Array.isArray(value) === false
     ) {
+      if (options.plurals && path.length > 0) {
+        const categories = asPluralGroup(value);
+        if (categories !== undefined) {
+          result.push({ kind: "plural", key: path.join("."), path, categories });
+          return;
+        }
+      }
       for (const [key, nestedValue] of Object.entries(value)) {
         visit(nestedValue, [...path, key]);
       }
@@ -72,7 +79,7 @@ export function flattenYaml(root: Record<string, unknown>): Array<{
 export function assignPath(
   target: Record<string, unknown>,
   path: string[],
-  value: string,
+  value: unknown,
 ) {
   let cursor = target;
 

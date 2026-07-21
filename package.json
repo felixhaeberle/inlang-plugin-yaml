@@ -1,6 +1,6 @@
 {
   "name": "inlang-plugin-yaml",
-  "version": "3.0.0",
+  "version": "4.0.0",
   "description": "YAML resource plugin for inlang — import/export YAML translation files (i18next-style and Ruby on Rails-style)",
   "type": "module",
   "types": "./dist/index.d.ts",

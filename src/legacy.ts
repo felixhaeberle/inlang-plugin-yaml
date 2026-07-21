@@ -7,12 +7,16 @@ import type {
   ProjectSettings,
 } from "./types.js";
 import type { PluginSettings } from "./settings.js";
+import { assignPath, collectEntries, replaceLocale } from "./utilities.js";
 import {
-  assignPath,
-  flattenYaml,
-  parseYamlObject,
-  replaceLocale,
-} from "./utilities.js";
+  deleteAndPrune,
+  detectIndent,
+  parseYamlDocument,
+  setValueAtPath,
+  stringifyDocument,
+  toPlainObject,
+} from "./yamlDocument.js";
+import { cacheKey } from "./formatCache.js";
 import {
   DEFAULT_VARIABLE_REFERENCE_PATTERN,
   parseLegacyPattern,
@@ -20,11 +24,23 @@ import {
 } from "./pattern.js";
 
 /**
+ * Message IDs loaded per file, so a later save can remove messages that were
+ * deleted in the app. Module-level for the same reason as the format cache:
+ * the legacy API has no other channel between load and save.
+ */
+const loadedMessageIds = new Map<string, Set<string>>();
+
+/**
  * Legacy plugin API (v4), still called by apps like Sherlock (the inlang
  * VS Code extension). New apps use importFiles/exportFiles instead.
  *
- * Note: the legacy API flattens nested YAML keys with a dot (`a.b`) on load
- * and re-nests them on save.
+ * Notes:
+ * - nested YAML keys are flattened with a dot (`a.b`) on load and re-nested
+ *   on save
+ * - plural groups are exposed as flat `key.one`/`key.other` messages (the
+ *   modern API models them as real plural variants)
+ * - saving updates existing files in place, preserving comments, key order,
+ *   quote styles, indentation, and non-message content
  */
 export async function loadMessages(args: {
   settings: ProjectSettings;
@@ -45,42 +61,35 @@ export async function loadMessages(args: {
     languageTags,
     sourceLanguageTag,
   )) {
-    if (typeof pluginSettings.pathPattern === "string") {
+    for (const [namespace, pathPattern] of resolvePathPatterns(
+      pluginSettings,
+    )) {
       const entries = await readYamlEntries({
         nodeishFs: args.nodeishFs,
-        pathPattern: pluginSettings.pathPattern,
+        pathPattern,
         languageTag,
         pluginSettings,
       });
+      const fileMessageIds = new Set<string>();
       for (const { key, value } of entries) {
+        const messageId = namespace ? `${namespace}:${key}` : key;
+        fileMessageIds.add(messageId);
         addVariantToMessages(
           messages,
-          key,
+          messageId,
           languageTag,
           value,
           variableReferencePattern,
         );
       }
-    } else {
-      for (const [namespace, pathPattern] of Object.entries(
-        pluginSettings.pathPattern,
-      )) {
-        const entries = await readYamlEntries({
-          nodeishFs: args.nodeishFs,
-          pathPattern,
-          languageTag,
-          pluginSettings,
-        });
-        for (const { key, value } of entries) {
-          addVariantToMessages(
-            messages,
-            `${namespace}:${key}`,
-            languageTag,
-            value,
-            variableReferencePattern,
-          );
-        }
-      }
+      loadedMessageIds.set(
+        cacheKey({
+          settings: pluginSettings,
+          locale: languageTag,
+          namespace,
+        }),
+        fileMessageIds,
+      );
     }
   }
 
@@ -96,64 +105,56 @@ export async function saveMessages(args: {
   const variableReferencePattern =
     pluginSettings.variableReferencePattern ??
     DEFAULT_VARIABLE_REFERENCE_PATTERN;
+  const pathPatterns = resolvePathPatterns(pluginSettings);
+  const namespaces = pathPatterns
+    .map(([namespace]) => namespace)
+    .filter((namespace): namespace is string => namespace !== undefined);
+  const defaultNamespace = namespaces[0];
 
-  if (typeof pluginSettings.pathPattern === "string") {
-    // languageTag -> key -> pattern
-    const storage: Record<string, Record<string, LegacyPattern>> = {};
-    for (const message of args.messages) {
-      for (const variant of message.variants) {
-        storage[variant.languageTag] ??= {};
-        storage[variant.languageTag]![message.id] = variant.pattern;
-      }
+  // languageTag -> namespace ?? "" -> message id (without prefix) -> pattern
+  const storage: Record<
+    string,
+    Record<string, Record<string, LegacyPattern>>
+  > = {};
+  for (const message of args.messages) {
+    let namespace: string | undefined;
+    let key = message.id;
+    if (namespaces.length > 0) {
+      namespace =
+        namespaces.find((candidate) =>
+          message.id.startsWith(`${candidate}:`),
+        ) ?? defaultNamespace;
+      key = message.id.startsWith(`${namespace}:`)
+        ? message.id.slice(namespace!.length + 1)
+        : message.id;
     }
-    for (const [languageTag, keyedPatterns] of Object.entries(storage)) {
+    for (const variant of message.variants) {
+      storage[variant.languageTag] ??= {};
+      storage[variant.languageTag]![namespace ?? ""] ??= {};
+      storage[variant.languageTag]![namespace ?? ""]![key] = variant.pattern;
+    }
+  }
+
+  for (const [languageTag, namespacedPatterns] of Object.entries(storage)) {
+    for (const [namespaceKey, keyedPatterns] of Object.entries(
+      namespacedPatterns,
+    )) {
+      const namespace = namespaceKey === "" ? undefined : namespaceKey;
+      const pathPattern = pathPatterns.find(
+        ([candidate]) => candidate === namespace,
+      )?.[1];
+      if (pathPattern === undefined) {
+        continue;
+      }
       await writeYamlFile({
         nodeishFs: args.nodeishFs,
-        path: replaceLocale(pluginSettings.pathPattern, languageTag),
+        path: replaceLocale(pathPattern, languageTag),
         languageTag,
+        namespace,
         keyedPatterns,
         pluginSettings,
         variableReferencePattern,
       });
-    }
-  } else {
-    const namespaces = Object.keys(pluginSettings.pathPattern);
-    const defaultNamespace = namespaces[0] as string;
-    // languageTag -> namespace -> key -> pattern
-    const storage: Record<
-      string,
-      Record<string, Record<string, LegacyPattern>>
-    > = {};
-    for (const message of args.messages) {
-      const namespace =
-        namespaces.find((candidate) =>
-          message.id.startsWith(`${candidate}:`),
-        ) ?? defaultNamespace;
-      const key = message.id.startsWith(`${namespace}:`)
-        ? message.id.slice(namespace.length + 1)
-        : message.id;
-      for (const variant of message.variants) {
-        storage[variant.languageTag] ??= {};
-        storage[variant.languageTag]![namespace] ??= {};
-        storage[variant.languageTag]![namespace]![key] = variant.pattern;
-      }
-    }
-    for (const [languageTag, namespacedPatterns] of Object.entries(storage)) {
-      for (const [namespace, keyedPatterns] of Object.entries(
-        namespacedPatterns,
-      )) {
-        await writeYamlFile({
-          nodeishFs: args.nodeishFs,
-          path: replaceLocale(
-            pluginSettings.pathPattern[namespace] as string,
-            languageTag,
-          ),
-          languageTag,
-          keyedPatterns,
-          pluginSettings,
-          variableReferencePattern,
-        });
-      }
     }
   }
 }
@@ -166,6 +167,19 @@ function getPluginSettings(settings: ProjectSettings): PluginSettings {
     );
   }
   return pluginSettings;
+}
+
+/**
+ * Normalizes the pathPattern setting into [namespace, pattern] tuples
+ * (namespace undefined for a plain string pattern).
+ */
+function resolvePathPatterns(
+  pluginSettings: PluginSettings,
+): Array<[string | undefined, string]> {
+  if (typeof pluginSettings.pathPattern === "string") {
+    return [[undefined, pluginSettings.pathPattern]];
+  }
+  return Object.entries(pluginSettings.pathPattern);
 }
 
 /**
@@ -192,21 +206,14 @@ async function readYamlEntries(args: {
   pluginSettings: PluginSettings;
 }): Promise<Array<{ key: string; value: string }>> {
   const path = replaceLocale(args.pathPattern, args.languageTag);
-  let file: string;
-  try {
-    file = await args.nodeishFs.readFile(path, { encoding: "utf-8" });
-  } catch (error) {
+  const file = await readFileIfExists(args.nodeishFs, path);
+  if (file === undefined) {
     // file does not exist yet, e.g. a namespace file missing for one language
-    if (
-      (error as { code?: string }).code === "FileNotFound" ||
-      (error as { code?: string }).code === "ENOENT"
-    ) {
-      return [];
-    }
-    throw error;
+    return [];
   }
 
-  let root = parseYamlObject(file);
+  const document = parseYamlDocument(file, `"${path}"`);
+  let root = toPlainObject(document, `"${path}"`);
   if (args.pluginSettings.localeAsRootKey) {
     const unwrapped = root[args.languageTag];
     root =
@@ -217,7 +224,28 @@ async function readYamlEntries(args: {
         : {};
   }
 
-  return flattenYaml(root);
+  // the legacy message model has no plural variants -> flat entries
+  return collectEntries(root, { plurals: false }).map((entry) => ({
+    key: entry.key,
+    value: entry.kind === "message" ? entry.value : "",
+  }));
+}
+
+async function readFileIfExists(
+  nodeishFs: NodeishFilesystemSubset,
+  path: string,
+): Promise<string | undefined> {
+  try {
+    return await nodeishFs.readFile(path, { encoding: "utf-8" });
+  } catch (error) {
+    if (
+      (error as { code?: string }).code === "FileNotFound" ||
+      (error as { code?: string }).code === "ENOENT"
+    ) {
+      return undefined;
+    }
+    throw error;
+  }
 }
 
 function addVariantToMessages(
@@ -249,21 +277,62 @@ async function writeYamlFile(args: {
   nodeishFs: NodeishFilesystemSubset;
   path: string;
   languageTag: string;
+  namespace: string | undefined;
   keyedPatterns: Record<string, LegacyPattern>;
   pluginSettings: PluginSettings;
   variableReferencePattern: string[];
 }): Promise<void> {
-  const tree: Record<string, unknown> = {};
-  for (const [key, pattern] of Object.entries(args.keyedPatterns)) {
-    assignPath(
-      tree,
-      key.split("."),
-      serializeLegacyPattern(pattern, args.variableReferencePattern),
+  const prefix = args.pluginSettings.localeAsRootKey
+    ? [args.languageTag]
+    : [];
+  const existing = await readFileIfExists(args.nodeishFs, args.path);
+
+  let content: string;
+  if (existing === undefined) {
+    // no existing file -> emit a clean tree
+    const tree: Record<string, unknown> = {};
+    for (const [key, pattern] of Object.entries(args.keyedPatterns)) {
+      assignPath(
+        tree,
+        [...prefix, ...key.split(".")],
+        serializeLegacyPattern(pattern, args.variableReferencePattern),
+      );
+    }
+    content = stringify(tree, { indent: 2, lineWidth: 0 });
+  } else {
+    // update the existing file in place: comments, key order, quote styles,
+    // and non-message content survive
+    const document = parseYamlDocument(existing, `"${args.path}"`);
+    const previousIds = loadedMessageIds.get(
+      cacheKey({
+        settings: args.pluginSettings,
+        locale: args.languageTag,
+        namespace: args.namespace,
+      }),
     );
+    if (previousIds !== undefined) {
+      for (const previousId of previousIds) {
+        if (previousId in args.keyedPatterns === false) {
+          const unprefixedId =
+            args.namespace !== undefined &&
+            previousId.startsWith(`${args.namespace}:`)
+              ? previousId.slice(args.namespace.length + 1)
+              : previousId;
+          if (unprefixedId in args.keyedPatterns === false) {
+            deleteAndPrune(document, [...prefix, ...unprefixedId.split(".")]);
+          }
+        }
+      }
+    }
+    for (const [key, pattern] of Object.entries(args.keyedPatterns)) {
+      setValueAtPath(
+        document,
+        [...prefix, ...key.split(".")],
+        serializeLegacyPattern(pattern, args.variableReferencePattern),
+      );
+    }
+    content = stringifyDocument(document, detectIndent(existing));
   }
-  const root = args.pluginSettings.localeAsRootKey
-    ? { [args.languageTag]: tree }
-    : tree;
 
   const directoryPath = args.path.split("/").slice(0, -1).join("/");
   if (directoryPath !== "" && directoryPath !== ".") {
@@ -274,8 +343,5 @@ async function writeYamlFile(args: {
     }
   }
 
-  await args.nodeishFs.writeFile(
-    args.path,
-    stringify(root, { indent: 2, lineWidth: 0 }),
-  );
+  await args.nodeishFs.writeFile(args.path, content);
 }
